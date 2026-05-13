@@ -1,0 +1,66 @@
+/**
+ * Cartesian Agent Admin Styles
+ */
+
+.wrap h1 {
+  margin-bottom: 20px;
+}
+
+#cartesian-public-key {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  padding: 10px;
+}
+
+.cartesian-agent-section {
+  margin-bottom: 30px;
+}
+
+.cartesian-agent-section h2 {
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+.form-table th {
+  font-weight: 600;
+}
+
+.form-table td p.description {
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.form-table td p.description strong {
+  font-weight: 600;
+  color: #d63638;
+}
+
+/* API Key field wrapper */
+.cartesian-api-key-field-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.cartesian-api-key-field-wrapper input {
+  flex: 1;
+}
+
+.cartesian-reveal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  min-width: 36px;
+  height: 30px;
+}
+
+.cartesian-reveal-btn .dashicons {
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+}
