@@ -3,7 +3,7 @@
  * Plugin Name: Cartesian Agent
  * Plugin URI: https://cartesian.io
  * Description: Integrates Cartesian AI-powered agent into WordPress admin pages.
- * Version: 0.5.1
+ * Version: 0.6.0
  * Author: Cartesian
  * License: GPL v3 or later
  * License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CARTESIAN_AGENT_VERSION', '0.5.1' );
+define( 'CARTESIAN_AGENT_VERSION', '0.6.0' );
 define( 'CARTESIAN_AGENT_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'CARTESIAN_AGENT_PLUGIN_PATH', plugin_dir_path( __FILE__ ) );
 
@@ -2487,5 +2487,23 @@ if (apiKeyDisplay) {
 	}
 }
 
+if ( file_exists( __DIR__ . '/vendor/autoload.php' ) ) {
+	require_once __DIR__ . '/vendor/autoload.php';
+}
+
 // Initialize the plugin.
 new CartesianAgent();
+
+add_action(
+	'plugins_loaded',
+	static function () {
+		if ( class_exists( 'YahnisElsts\PluginUpdateChecker\v5\PucFactory' ) ) {
+			$update_checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+				'https://github.com/cartesianio/wordpress-plugin/',
+				__FILE__,
+				'cartesian-agent'
+			);
+			$update_checker->getVcsApi()->enableReleaseAssets( '/cartesian-agent\.zip/' );
+		}
+	}
+);
