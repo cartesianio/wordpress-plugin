@@ -4,7 +4,7 @@ Tags: analytics, tracking, ai, agent, personalization
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 8.0
-Stable tag: 0.6.0
+Stable tag: 0.7.0
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -99,9 +99,3 @@ No, the Cartesian Agent currently only works on WordPress admin pages.
 = Can I disable data collection? =
 
 Yes, simply disable the plugin in the Settings > Cartesian Agent page. You can also deactivate the plugin entirely through the WordPress Plugins screen.
-
-== Screenshots ==
-
-1. Settings page with enable/disable toggle and API Key configuration
-2. Test Connection feature for validating credentials
-3. Advanced settings for environment and agent ID overrides
