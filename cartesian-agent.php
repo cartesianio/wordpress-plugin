@@ -3,7 +3,7 @@
  * Plugin Name: Cartesian Agent
  * Plugin URI: https://cartesian.io
  * Description: Integrates Cartesian AI-powered agent into WordPress admin pages.
- * Version: 0.8.0
+ * Version: 0.9.0
  * Author: Cartesian
  * License: GPL v3 or later
  * License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CARTESIAN_AGENT_VERSION', '0.8.0' );
+define( 'CARTESIAN_AGENT_VERSION', '0.9.0' );
 define( 'CARTESIAN_AGENT_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'CARTESIAN_AGENT_PLUGIN_PATH', plugin_dir_path( __FILE__ ) );
 
@@ -40,6 +40,7 @@ class CartesianAgent {
 		add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
 		add_action( 'admin_notices', array( $this, 'display_admin_notices' ) );
 		add_action( 'admin_post_cartesian_save_settings', array( $this, 'handle_save_settings' ) );
+		add_action( 'wp_ajax_cartesian_dismiss_setup_notice', array( $this, 'dismiss_setup_notice' ) );
 
 		// Add Settings link on plugins page.
 		add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), array( $this, 'add_plugin_action_links' ) );
@@ -303,6 +304,53 @@ class CartesianAgent {
 	}
 
 	/**
+	 * Check if the setup notice should be displayed
+	 *
+	 * @return bool Whether to show the setup notice.
+	 */
+	private function needs_setup_notice() {
+		if ( $this->is_hide_managed_options() ) {
+			return false;
+		}
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return false;
+		}
+
+		if ( $this->is_enabled() && ! empty( $this->get_api_key() ) ) {
+			return false;
+		}
+
+		return ! get_option( 'cartesian_agent_setup_notice_dismissed', false );
+	}
+
+	/**
+	 * Get the Home Portal URL based on environment
+	 *
+	 * Returns the URL to the Cartesian home portal (ecosystem manager) for the current environment.
+	 *
+	 * @param string $environment Optional environment override. If not provided, uses the saved environment setting.
+	 * @return string The Home Portal URL.
+	 */
+	private function get_home_portal_url( $environment = null ) {
+		if ( null === $environment ) {
+			$environment = $this->get_environment();
+		}
+
+		switch ( $environment ) {
+			case 'local':
+				return 'http://localhost:4201';
+			case 'dev':
+				return 'https://home.cartesian-dev.click';
+			case 'staging':
+				return 'https://home.cartesian-staging.click';
+			case 'prod':
+			default:
+				return 'https://home.cartesian.io';
+		}
+	}
+
+	/**
 	 * Enqueue admin assets
 	 *
 	 * @param string $hook Current admin page hook.
@@ -561,7 +609,16 @@ class CartesianAgent {
 		echo '<span class="dashicons dashicons-visibility"></span>';
 		echo '</button>';
 		echo '</div>';
-		echo '<p class="description" id="cartesian-api-key-description">Agent Key for <span id="cartesian-current-env-label">' . esc_html( $env_labels[ $env_key ] ) . '</span> environment.</p>';
+		$home_portal_url = $this->get_home_portal_url();
+		$brand_name      = $this->get_brand_name();
+		$portal_link     = sprintf(
+			' <a href="%s" target="_blank" rel="noopener noreferrer">%s</a>',
+			esc_url( $home_portal_url ),
+			/* translators: %s: brand name (e.g., "Cartesian" or custom whitelabel name) */
+			sprintf( esc_html__( 'Get your Agent Key from the %s portal', 'cartesian-agent' ), esc_html( $brand_name ) )
+		);
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $portal_link is built from esc_url() and esc_html() above.
+		echo '<p class="description" id="cartesian-api-key-description">Agent Key for <span id="cartesian-current-env-label">' . esc_html( $env_labels[ $env_key ] ) . '</span> environment.' . $portal_link . '</p>';
 
 		// Show message if current environment is using environment variable.
 		if ( $keys_from_env[ $env_key ] ) {
@@ -989,9 +1046,44 @@ if (apiKeyDisplay) {
 	 * Display admin notices
 	 */
 	public function display_admin_notices() {
-		// Only show settings-specific notices on our settings page.
+		// Setup notice: shown on ALL admin pages for non-managed installs until dismissed or setup is complete.
+		if ( $this->needs_setup_notice() ) {
+			$brand_name   = $this->get_brand_name();
+			$settings_url = admin_url( 'options-general.php?page=cartesian-agent' );
+			?>
+			<div class="notice notice-info is-dismissible" id="cartesian-setup-notice">
+				<p>
+					<?php
+					printf(
+						/* translators: %1$s: brand name, %2$s: opening <a> tag, %3$s: closing </a> tag */
+						esc_html__( '%1$s Agent is installed but needs setup. Please %2$sgo to settings%3$s to enable agent tracking and set your Agent Key.', 'cartesian-agent' ),
+						esc_html( $brand_name ),
+						'<a href="' . esc_url( $settings_url ) . '">',
+						'</a>'
+					);
+					?>
+				</p>
+			</div>
+			<script type="text/javascript">
+			jQuery(document).ready(function($) {
+				$(document).on('click', '#cartesian-setup-notice .notice-dismiss', function() {
+					$.ajax({
+						url: ajaxurl,
+						type: 'POST',
+						data: {
+							action: 'cartesian_dismiss_setup_notice',
+							_wpnonce: '<?php echo esc_js( wp_create_nonce( 'cartesian_dismiss_setup_notice' ) ); ?>'
+						}
+					});
+				});
+			});
+			</script>
+			<?php
+		}
+
+		// Settings-specific notices: only show on our settings page.
 		$screen = get_current_screen();
-		if ( $screen && 'settings_page_cartesian-agent' !== $screen->id ) {
+		if ( ! $screen || 'settings_page_cartesian-agent' !== $screen->id ) {
 			return;
 		}
 
@@ -1123,6 +1215,20 @@ if (apiKeyDisplay) {
 			</tbody>
 		</table>
 		<?php
+	}
+
+	/**
+	 * Handle AJAX request to dismiss the setup notice
+	 */
+	public function dismiss_setup_notice() {
+		check_ajax_referer( 'cartesian_dismiss_setup_notice' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( 'Insufficient permissions', 403 );
+		}
+
+		update_option( 'cartesian_agent_setup_notice_dismissed', true, true );
+		wp_send_json_success();
 	}
 
 	/**
