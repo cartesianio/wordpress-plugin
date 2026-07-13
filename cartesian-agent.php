@@ -3,7 +3,7 @@
  * Plugin Name: Cartesian Agent
  * Plugin URI: https://cartesian.io
  * Description: Integrates Cartesian AI-powered agent into WordPress admin pages.
- * Version: 0.11.0
+ * Version: 0.11.1
  * Author: Cartesian
  * License: GPL v3 or later
  * License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CARTESIAN_AGENT_VERSION', '0.11.0' );
+define( 'CARTESIAN_AGENT_VERSION', '0.11.1' );
 define( 'CARTESIAN_AGENT_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'CARTESIAN_AGENT_PLUGIN_PATH', plugin_dir_path( __FILE__ ) );
 
@@ -55,9 +55,12 @@ class CartesianAgent {
 		register_activation_hook( __FILE__, array( __CLASS__, 'activate' ) );
 		register_deactivation_hook( __FILE__, array( __CLASS__, 'deactivate' ) );
 
-		// Sync installed offerings when any plugin is installed or uninstalled.
-		add_action( 'upgrader_process_complete', array( $this, 'on_plugin_installed' ), 10, 2 );
+		// Sync installed offerings when any plugin is installed, updated, uninstalled,
+		// activated, or deactivated.
+		add_action( 'upgrader_process_complete', array( $this, 'on_plugin_installed_or_updated' ), 10, 2 );
 		add_action( 'deleted_plugin', array( $this, 'send_installed_offerings' ) );
+		add_action( 'activated_plugin', array( $this, 'send_installed_offerings' ) );
+		add_action( 'deactivated_plugin', array( $this, 'send_installed_offerings' ) );
 
 		// MainWP Child integration for centralized management.
 		add_filter( 'mainwp_child_extra_execution', array( $this, 'mainwp_child_extra_execution' ), 10, 2 );
@@ -2481,26 +2484,26 @@ if (apiKeyDisplay) {
 		}
 
 		// Note: send_installed_offerings() is called via the 'upgrader_process_complete' hook,
-		// which fires when plugins are installed (regardless of activation status).
+		// which fires when plugins are installed or updated (regardless of activation status).
 	}
 
 	/**
-	 * Handle plugin installation via the upgrader
+	 * Handle plugin installation or update via the upgrader
 	 *
-	 * Called when WordPress finishes installing or updating via the upgrader.
-	 * Only triggers send_installed_offerings for plugin installations.
+	 * Called when WordPress finishes installing or updating a plugin via the upgrader.
+	 * Triggers send_installed_offerings for both installs and updates, since an update
+	 * changes the installed version this plugin reports.
 	 *
 	 * @param WP_Upgrader $upgrader   WP_Upgrader instance.
 	 * @param array       $hook_extra Extra arguments passed to hooked filters.
 	 */
-	public function on_plugin_installed( $upgrader, $hook_extra ) {
-		// Only process plugin installations.
+	public function on_plugin_installed_or_updated( $upgrader, $hook_extra ) {
+		// Only process plugin installs/updates (as opposed to themes, translations, etc.).
 		if ( ! isset( $hook_extra['type'] ) || 'plugin' !== $hook_extra['type'] ) {
 			return;
 		}
 
-		// Only process installs, not updates.
-		if ( ! isset( $hook_extra['action'] ) || 'install' !== $hook_extra['action'] ) {
+		if ( ! isset( $hook_extra['action'] ) || ! in_array( $hook_extra['action'], array( 'install', 'update' ), true ) ) {
 			return;
 		}
 
@@ -2510,8 +2513,9 @@ if (apiKeyDisplay) {
 	/**
 	 * Send installed WordPress plugins to the Cloud Backend
 	 *
-	 * Collects all installed plugins and sends their slugs to the installed offerings endpoint.
-	 * This is called when any plugin is installed or uninstalled to sync the plugin list with the Cloud Backend.
+	 * Collects all installed plugins, along with their active/inactive state and version,
+	 * and sends them to the installed offerings endpoint. This is called when any plugin is
+	 * installed, updated, or uninstalled to sync the plugin list with the Cloud Backend.
 	 */
 	public function send_installed_offerings() {
 		$api_key = $this->get_api_key();
@@ -2525,7 +2529,7 @@ if (apiKeyDisplay) {
 			return;
 		}
 
-		// Ensure get_plugins() function is available.
+		// Ensure get_plugins() and is_plugin_active() functions are available.
 		if ( ! function_exists( 'get_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
@@ -2533,10 +2537,10 @@ if (apiKeyDisplay) {
 		// Get all installed plugins.
 		$plugins = get_plugins();
 
-		// Extract plugin slugs from the plugin file paths.
+		// Build a wordpress/<slug> => { state, version } map.
 		// Plugin keys are in format "plugin-folder/plugin-file.php" or "plugin-file.php".
-		$offering_ids = array();
-		foreach ( array_keys( $plugins ) as $plugin_file ) {
+		$installed_offerings = array();
+		foreach ( $plugins as $plugin_file => $plugin_data ) {
 			// Get the directory name (slug) from the plugin path.
 			$slug = dirname( $plugin_file );
 
@@ -2545,13 +2549,26 @@ if (apiKeyDisplay) {
 				$slug = basename( $plugin_file, '.php' );
 			}
 
-			$offering_ids[] = 'wordpress/' . $slug;
+			$offering_id = 'wordpress/' . $slug;
+			$is_active   = is_plugin_active( $plugin_file );
+
+			// Two distinct plugin files can derive the same slug (e.g. a single-file
+			// "foo.php" and a folder-based "foo/foo.php"). On collision, keep whichever
+			// entry is active rather than letting an inactive one silently overwrite it.
+			if ( isset( $installed_offerings[ $offering_id ] ) && 'active' === $installed_offerings[ $offering_id ]['state'] && ! $is_active ) {
+				continue;
+			}
+
+			$installed_offerings[ $offering_id ] = array(
+				'state'   => $is_active ? 'active' : 'inactive',
+				'version' => $plugin_data['Version'],
+			);
 		}
 
 		// Build request body.
 		$request_body = array(
-			'organizationName' => $organization_name,
-			'offeringIds'      => $offering_ids,
+			'organizationName'   => $organization_name,
+			'installedOfferings' => $installed_offerings,
 		);
 
 		$base_url     = $this->get_cloud_backend_url();
