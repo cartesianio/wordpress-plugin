@@ -1,3 +1,5 @@
+> This plugin is from an earlier version of Cartesian. For what Cartesian does today, see [cartesian.io](https://cartesian.io).
+
 # Cartesian Agent WordPress Plugin
 
 Integrates [Cartesian's](https://cartesian.io) AI-powered agent into WordPress admin pages for enhanced user experience and personalization.
